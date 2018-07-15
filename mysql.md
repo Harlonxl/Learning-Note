@@ -1,7 +1,7 @@
 目录
 =================
 
-* [1、SQL语言主要分为三类：](#1sql%E8%AF%AD%E8%A8%80%E4%B8%BB%E8%A6%81%E5%88%86%E4%B8%BA%E4%B8%89%E7%B1%BB)
+* [1、SQL语言主要分为三类](#1sql%E8%AF%AD%E8%A8%80%E4%B8%BB%E8%A6%81%E5%88%86%E4%B8%BA%E4%B8%89%E7%B1%BB)
 * [2、库操作](#2%E5%BA%93%E6%93%8D%E4%BD%9C)
   * [2\.1 新增数据库](#21-%E6%96%B0%E5%A2%9E%E6%95%B0%E6%8D%AE%E5%BA%93)
   * [2\.2 查询数据库](#22-%E6%9F%A5%E8%AF%A2%E6%95%B0%E6%8D%AE%E5%BA%93)
@@ -122,7 +122,8 @@
   * [33\.3 修改过程 &amp; 删除过程](#333-%E4%BF%AE%E6%94%B9%E8%BF%87%E7%A8%8B--%E5%88%A0%E9%99%A4%E8%BF%87%E7%A8%8B)
   * [33\.4 过程参数](#334-%E8%BF%87%E7%A8%8B%E5%8F%82%E6%95%B0)
 
-# 1、SQL语言主要分为三类：
+- - - - -
+# 1、SQL语言主要分为三类
 - DDL：Data Defination Language，数据定义语言，用来维护存储数据的结构（数据库、表），例如create、drop和alter操作
 - DML：Data  Manipulation Language，数据操作语言，用来对数据进行操作，例如delete、update、insert，又可细分为DQL（Data Query Language），数据查询语言，例如select
 - DCL：Data Control Language，数据控制语言，用于负责用户权限管理，例如grant、revoke等
