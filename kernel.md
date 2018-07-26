@@ -360,7 +360,251 @@ Linux中的`CFS`调度器，其抢占时机取决于新的可运行程序消耗�
 - - - - - 
 ## 4.4 Linux调度算法
 ### 4.4.1 调度器类
-Linux调度器是以模块的方式提供的，称作为调度器类，它允许多种不同的可动态添加的调度算法并存，调度属于自己的进程，每个调度器都有一个优先级，基础的调度器的代码位于`kernel/sched.c`文件中，它会按照优先级顺序遍历调度类，拥有一个可执行进程的最高优先级的调度器类生出，去选择下面要执行的一个程序。  
+Linux调度器是以模块的方式提供的，称作为调度器类，它允许多种不同的可动态添加的调度算法并存，调度属于自己的进程，每个调度器都有一个优先级，基础的调度器的代码位于`kernel/sched.c`文件中，它会按照优先级顺序遍历调度类，拥有一个可执行进程的最高优先级的调度器类生出，去选择下面要执行的一个程序。    
 完全公平调度`(CFS)`是一个针对普通进程的调度类，在Linux中被称为`SCHED_NORMAL`，`CFS`算法实现定义在文件`kernel/sched_fair.c`中。
+- - - - - 
+### 4.4.2 公平调度
+`CFS`称为公平调度器是因为它确保给每个进程公平的处理器使用比，任何进程所获得的处理器时间是由他自己和其他可运行进程`nice`值的相对差值决定的。`nice`值对时间片的作用不再是算数加权，而是几何加权。
+- - - - - 
+## 4.5 Linux调度的实现
+Linux中`CFS`调度算法的代码位于文件`kernel/sched_fair.c`中，我们关注其四个组成部分：
+- 时间记账
+- 进程选择
+- 调度器入口
+- 睡眠和唤醒
+
+### 4.5.1 时间记账
+`CFS`算法中记录进程运行时间的结构体如下：
+``` C
+struct sched_entity {
+	struct load_weight	load;		/* for load-balancing */
+	struct rb_node		run_node;
+	struct list_head	group_node;
+	unsigned int		on_rq;
+	u64			exec_start;
+	u64			sum_exec_runtime;
+	u64			vruntime;
+	u64			prev_sum_exec_runtime;
+	u64			last_wakeup;
+	u64			avg_overlap;
+	u64			nr_migrations;
+	u64			start_runtime;
+	u64			avg_wakeup;
+	u64			avg_running;
+...
+```
+这个记账信息保存在`task_struct`中的`ee`字段中，`update_curr()`函数完成了该记账功能。
+``` C
+static void update_curr(struct cfs_rq *cfs_rq)
+{
+	struct sched_entity *curr = cfs_rq->curr;
+	u64 now = rq_of(cfs_rq)->clock_task;
+	unsigned long delta_exec;
+
+	if (unlikely(!curr))
+		return;
+
+	/*
+	 * Get the amount of time the current task was running
+	 * since the last time we changed load (this cannot
+	 * overflow on 32 bits):
+	 */
+	delta_exec = (unsigned long)(now - curr->exec_start);
+	if (!delta_exec)
+		return;
+
+	__update_curr(cfs_rq, curr, delta_exec);
+	curr->exec_start = now;
+
+	if (entity_is_task(curr)) {
+		struct task_struct *curtask = task_of(curr);
+
+		trace_sched_stat_runtime(curtask, delta_exec, curr->vruntime);
+		cpuacct_charge(curtask, delta_exec);
+		account_group_exec_runtime(curtask, delta_exec);
+	}
+}
+```
+记账中最重要的变量是`vruntime`，虚拟运行时间，每隔一段时间内核会执行`update_curr()`函数，计算当前进程的执行时间，然后根据权值计算虚拟的运行时间，再加到`vruntime`变量上，Linux中进程的权值是由`prio_to_weight`这个数组定义的。
+``` C
+static const int prio_to_weight[40] = {
+ /* -20 */     88761,     71755,     56483,     46273,     36291,
+ /* -15 */     29154,     23254,     18705,     14949,     11916,
+ /* -10 */      9548,      7620,      6100,      4904,      3906,
+ /*  -5 */      3121,      2501,      1991,      1586,      1277,
+ /*   0 */      1024,       820,       655,       526,       423,
+ /*   5 */       335,       272,       215,       172,       137,
+ /*  10 */       110,        87,        70,        56,        45,
+ /*  15 */        36,        29,        23,        18,        15,
+};
+```
+权值的计算公式如下：  
+>  虚拟运行时间 = 实际运行时间 * (NICE_0_LOAD / 权重）
+
+其中`NICE_0_LOAD`是`nice`为0的权重，可以看到权重越大，虚拟运行时间越小，而Linux会选择虚拟时间最小的进行调度。
+
+### 4.5.2 进程选择
+`CFS`使用红黑树来组织可运行队列，并利用其迅速找到最小`vruntime`值的进程。它通过`__pick_next_entity()`函数来选择最小的`vruntime`。
+``` C
+static struct sched_entity *__pick_last_entity(struct cfs_rq *cfs_rq)
+{
+	struct rb_node *last = rb_last(&cfs_rq->tasks_timeline);
+
+	if (!last)
+		return NULL;
+
+	return rb_entry(last, struct sched_entity, run_node);
+}
+```
+当进程变为可运行状态（被唤醒）或者是通过`fork()`调用第一次创建时，`CFS`将其加入红黑树种；当进程被阻塞或者终止时，`CFS`将其从红黑树中删除。
+- - - - - 
+### 4.5.3 调度器入口
+进程调度的主要入口点是函数`schedule()`，`schedule()`会调用`pick_next_task()`从当前调度器中选择一个优先级最大的任务来调度，`pick_next_task()`会遍历调度器，从每一个调度器中执行`pick_next_task()`来选择要调度的进程，如果当前系统没有被调度的进程，则返回`idle`进程。
+``` C
+asmlinkage void __sched schedule(void)
+{
+	struct task_struct *prev, *next;
+	unsigned long *switch_count;
+	struct rq *rq;
+	int cpu;
+
+need_resched:
+	preempt_disable();
+	cpu = smp_processor_id();
+	rq = cpu_rq(cpu);
+	rcu_sched_qs(cpu);
+	prev = rq->curr;
+	switch_count = &prev->nivcsw;
+
+	release_kernel_lock(prev);
+need_resched_nonpreemptible:
+
+	schedule_debug(prev);
+
+	if (sched_feat(HRTICK))
+		hrtick_clear(rq);
+
+	spin_lock_irq(&rq->lock);
+	update_rq_clock(rq);
+	clear_tsk_need_resched(prev);
+
+	if (prev->state && !(preempt_count() & PREEMPT_ACTIVE)) {
+		if (unlikely(signal_pending_state(prev->state, prev)))
+			prev->state = TASK_RUNNING;
+		else
+			deactivate_task(rq, prev, 1);
+		switch_count = &prev->nvcsw;
+	}
+
+	pre_schedule(rq, prev);
+
+	if (unlikely(!rq->nr_running))
+		idle_balance(cpu, rq);
+
+	put_prev_task(rq, prev);
+	next = pick_next_task(rq);
+
+	if (likely(prev != next)) {
+		sched_info_switch(prev, next);
+		perf_event_task_sched_out(prev, next, cpu);
+
+		rq->nr_switches++;
+		rq->curr = next;
+		++*switch_count;
+
+		context_switch(rq, prev, next); /* unlocks the rq */
+		/*
+		 * the context switch might have flipped the stack from under
+		 * us, hence refresh the local variables.
+		 */
+		cpu = smp_processor_id();
+		rq = cpu_rq(cpu);
+	} else
+		spin_unlock_irq(&rq->lock);
+
+	post_schedule(rq);
+
+	if (unlikely(reacquire_kernel_lock(current) < 0))
+		goto need_resched_nonpreemptible;
+
+	preempt_enable_no_resched();
+	if (need_resched())
+		goto need_resched;
+}
+```
+`pick_next_task`实现：
+``` C
+/*
+ * 挑选醉倒优先级的任务
+ */
+static inline struct task_struct *
+pick_next_task(struct rq *rq)
+{
+	const struct sched_class *class;
+	struct task_struct *p;
+
+	/*
+	 * 优化：我们知道所有任务都在公平类中，就可以直接调用公平类中的函数选择下一个进程
+	 */
+	if (likely(rq->nr_running == rq->cfs.nr_running)) {
+		p = fair_sched_class.pick_next_task(rq);
+		if (likely(p))
+			return p;
+	}
+
+	class = sched_class_highest;
+	for ( ; ; ) {
+		p = class->pick_next_task(rq);
+		if (p)
+			return p;
+		/*
+		 * Will never be NULL as the idle class always
+		 * returns a non-NULL p:
+		 */
+		class = class->next;
+	}
+```
+- - - - - 
+### 4.5.4 睡眠和唤醒
+睡眠的过程：进程把自己置为休眠状态，从可执行红黑树种移出，放入等待队列，然后调用`schedule()`选择和执行下一个进程。唤醒的过程刚好相反。休眠的两种相关的进程状态：`TASK_INTERRUPTIBLE`和`TASK_UNINTERRUPTIBLE`，他们的唯一区别是处于`TASK_UNINTERRUPTIBLE`的进程会忽略信号，而处于`TASK_INTERRUPTIBLE`状态的进程如果接受到一个信息，会被提前唤醒并响应该信号。
+- - - - - 
+## 4.6 抢占和上下文切换
+上下文切换就是从一个进程切换到下一个要执行的进程，由定义在`kernel/sched.c`中的`context_switch()`函数负责处理，当一个新的进程被选出来准备投入运行的时候，`schedule()`就会调用该函数。它完成两项基本的工作：
+- 调用`<asm/mmu_context.h>`中的`switch_mm()`，该函数负责把虚拟内存从上一个进程切换到下一个进程。
+- 调用`<asm/system.h>`中的`switch_to()`该函数负责从上一个进程的处理器状态切换到新的进程的处理器状态，这包括保存、恢复栈信息和寄存器信息，还有其他任何与体系结构相关的状态信息，都必须以每个进程为对象进行管理和保存。
+
+`schedule()`函数的执行时机是通过`need_resched`这个标志来判断的。
+
+### 4.6.1 用户抢占
+内核即将返回用户空间的时候，如果`need_reched`标志被设置，会导致`schedule()`被调用。用户抢占在以下情况下产生：
+- 从系统调用返回用户空间时
+- 从中断处理程序返回用户空间时
+- - - - - 
+### 4.6.2 内核抢占
+内核抢占需要查看`thread_info`中的`preempt_count`计数器，这个计数器记录当前进程使用锁的个数，只有当前进程没有锁的时候，进程才能被抢占。
+
+- - - - - 
+## 4.7 实时调度策略
+Linux中有两种实时调度策略：`SCHED_FIFO`和`SCHED_RR`，具体的实现在`kernel/sched_rt.c`。  
+`SCHED_FIFO`：先入先出的调度策略，只有等当前进程自己受阻塞或者显式地释放处理器为止，才能调度后面的进程执行。  
+`SCHED_RR`：轮询式调度策略，带有时间片，时间片用完，在同一优先级的其他实时进程被轮流调度。  
+实时进程的优先级比普通进程要高。
+- - - - - 
+## 4.8 与调度相关的系统调用
+
+| 系统调用 | 描述 |
+| --- | --- |
+| nice() | 设置进程的nice值 |
+| sched_setscheduler() | 设置进程的调度策略 |
+| sched_getscheduler() | 获取进程的调度策略 |
+| sched_setparam() | 设置进程的实时优先级 |
+| sched_getparam() | 获取进程的实时优先级 |
+| sched_get_priority_max() | 获取实时优先级的最大值 |
+| sched_get_priority_min() | 获取实时优先级的最小值 |
+| sehed_rr_get_interval() | 获取进程的时间片值 |
+| sched_setaffinity() | 设置进程的处理器的亲和力 |
+| sched_getaffinity() | 获取进程的处理器的亲和力 |
+| sched_yield() | 暂时让出处理器 |
+
 
 
