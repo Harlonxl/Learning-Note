@@ -8,5 +8,20 @@
 ## 联系方式：
 - 邮箱：harlonxl@gmail.com
 
-## 未来准备改进
-使用wiki更加有条理化的整理学习过程中的笔记
+## wiki（正在重建）
+## Linux Kernel
+
+* [1、Linux内核准备](https://github.com/Harlonxl/Learning-Note/wiki/1、Linux内核准备)
+
+## MySQL
+
+* [MySQL基础](https://github.com/Harlonxl/Learning-Note/blob/master/mysql.md)
+
+
+## Python
+
+* [Python学习笔记](https://github.com/Harlonxl/Learning-Note/blob/master/python.md)
+
+
+## React
+* [React学习笔记]
