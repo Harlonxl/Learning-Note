@@ -1,0 +1,79 @@
+# 4、系统调用
+目录
+=================
+
+* [4\.1 与内核通信](#41-%E4%B8%8E%E5%86%85%E6%A0%B8%E9%80%9A%E4%BF%A1)
+* [4\.2 系统调用](#42-%E7%B3%BB%E7%BB%9F%E8%B0%83%E7%94%A8)
+* [4\.3 系统调用处理程序](#43-%E7%B3%BB%E7%BB%9F%E8%B0%83%E7%94%A8%E5%A4%84%E7%90%86%E7%A8%8B%E5%BA%8F)
+* [4\.4 系统调用的实现](#44-%E7%B3%BB%E7%BB%9F%E8%B0%83%E7%94%A8%E7%9A%84%E5%AE%9E%E7%8E%B0)
+- - - - - 
+## 4.1 与内核通信
+系统调用在用户空间和硬件设备之间添加了一个中间层，该层的作用如下：
+- 为用户空间提供了一种硬件的抽象接口
+- 系统调用保证了系统的稳定和安全
+- - - - - 
+## 4.2 系统调用
+Unix的接口设计有一句格言：提供机制而不是策略，也就是说系统调用用于完成某种确定的目的的函数，这些函数怎么用完全不需要内核去关心。
+`getpid()`系统调用，内中中的实现：
+``` C
+SYSCALL_DEFINE0(getpid)
+{
+    return task_tgid_vnr(current); // returns current->tgid
+}
+```
+`SYSCALL_DEFINE0`只是一个宏，它定义了一个无参数的系统调用，展开的代码如下：
+``` C
+asmlinkage long sys_getpid(void)
+```
+`asmlinkage`是一个限定词，通知编译器从栈中提取该函数的参数。  
+在Linux中，每个系统调用被赋予一个系统调用号，这样通过这个独一无二的系统调用号就可以关联系统调用。系统调用号非常重要，一旦分配了就无法改变。在Linux中，有一个“未实现”系统调用`sys_ni_syscall()`，它出了返回`-ENOSYS`以外不做任何其他工作，这个错误号是专门针对无效的系统调用而设的。  
+内核记录了系统调用表中的所有已注册过的系统调用的列表，存储在`sys_call_table`中，每一个体系结构中，都要定义这个表，在`x86`中，定义在`arch/x86/kernel/syscall_64.c`文件中。
+- - - - - 
+## 4.3 系统调用处理程序
+用户空间无法直接执行内核代码，它们不能调用内核空间中的函数，因为内核驻留在受保护的地址空间上。用户空间转到内核空间的机制是通过软中断实现的：通过一个异常导致系统切换到内核态去执行异常处理程序，在`x86`系统上定义的软中断是中断号128，通过`int $0x80`指令触发该中断，执行中断处理程序，叫做`system_call()`，所有的系统调用陷入内核的方式都是相同的，`x86`中，通过`eax`寄存器将系统调用号传入内核，其他的参数通过`ebx`、`ecx`、`edx`、`esi`和`edi`传入，如果有多于六个的参数，用一个单独的寄存器存放指向所有这些参数在用户空间地址的指针，内核给用户的返回值也通过`eax`寄存器来传递。
+- - - - - 
+## 4.4 系统调用的实现
+通过一个函数`silly_foo()`，来介绍系统调用的实现过程，首先来定义这个函数：
+``` C
+SYSCALL_DEFINE3(sys_foo, 
+                    unsigned long *, src, 
+                    unsigned long *, dst,
+                    unsigned long len)
+{
+    unsigned long buf;
+    if (copy_from_user(&buf, src, len)) {
+        return -EFAULT;
+    }
+    if (copy_to_user(dst, &buf, len)) {
+        return -EFAULT;
+    }
+    return len;
+}
+```
+这个函数仅仅把空户空间的数据拷贝到内核空间，又从内核空间拷贝到用户空间。有时候，我们需要检测用户进程的权限能否做一些指定的操作，例如能够更改进程的`nice`值，可以通过`capable()`函数来实现。  
+在系统调用表的最后加入一个表项，每种支持该系统调用的硬件体系都必须要做这样的工作，对于大多数体系结构来说，该表位于`entry.s`文件中，形式如下：
+``` 
+ENTRY (sys_call_table)
+    .long sys_restart_syscall /* 0 */
+    .long sys_exit
+    .long sys_fork
+    .long sys_read
+    .long sys_write
+    .long sys_open    /* 5 */
+...
+    .long sys_foo
+```
+对于所支持的各种体系结构，系统调用号都必须定义在`<asm/unistd.h>`中。
+``` C
+#define __NR_restart_syscall 0
+#define __NR_exit 1
+#define __NR_fork 2
+...
+#define __NR_foo 338
+```
+对于我们自定义的系统函数，只能通过Linux提供的宏来访问。  
+``` C
+#define __NR_foo 338
+__syscall0(long, foo)
+```
+- - - - - 

@@ -1,0 +1,117 @@
+# Linux内核准备
+目录
+=================
+* [1\.1 获取内核源码](#11-%E8%8E%B7%E5%8F%96%E5%86%85%E6%A0%B8%E6%BA%90%E7%A0%81)
+* [1\.2 安装内核源码](#12-%E5%AE%89%E8%A3%85%E5%86%85%E6%A0%B8%E6%BA%90%E7%A0%81)
+* [1\.3 使用补丁](#13-%E4%BD%BF%E7%94%A8%E8%A1%A5%E4%B8%81)
+* [1\.4 内核源码树](#14-%E5%86%85%E6%A0%B8%E6%BA%90%E7%A0%81%E6%A0%91)
+* [1\.5 编译内核](#15-%E7%BC%96%E8%AF%91%E5%86%85%E6%A0%B8)
+* [1\.6 内核开发的特点](#16-%E5%86%85%E6%A0%B8%E5%BC%80%E5%8F%91%E7%9A%84%E7%89%B9%E7%82%B9)
+* [1\.7 第一个内核模块程序](#17-%E7%AC%AC%E4%B8%80%E4%B8%AA%E5%86%85%E6%A0%B8%E6%A8%A1%E5%9D%97%E7%A8%8B%E5%BA%8F)
+- - - - - 
+## 1.1 获取内核源码
+- Linux内核官方网站：http://www.kernel.org
+- git：
+``` shell
+git clone https://github.com/torvalds/linux.git
+```
+- - - - -
+## 1.2 安装内核源码
+``` shell
+$ cd /usr/src/kernel
+$ tar xzvf linux-2.6.32.tar.gz
+```
+- - - - -
+## 1.3 使用补丁
+``` shell
+diff -Nur newfile oldfile
+patch -p1 < ../patch-x.y.z
+```
+``` shell
+for i in `ls ../patch`; \ 
+do patch -p1 < ../patch/"$i";done
+```
+- - - - -
+## 1.4 内核源码树
+
+| 目录 | 描述 |
+| :---: | :---: |
+| arch | 特定体系结构的源码 |
+| block | 块设备I/O层 |
+| crypto | 加密API |
+| Documention | 内核源码文档 |
+| drivers | 设备驱动程序 |
+| firmware | 使用某些驱动程序而需要的设备固件 |
+| fs | VFS和各种文件系统 |
+| include | 内核头文件 |
+| init | 内核引导和初始化 |
+| ipc | 进程间通信 |
+| kernel | 像调度程序这样的核心子系统 |
+| lib | 管理内核函数 |
+| mm | 内核管理子系统和VM |
+| net | 网络子系统 |
+| samples | 实例，实例代码 |
+| scripts | 编译内核使用的脚本 |
+| security | Linux安全模块 |
+| sound | 语音子系统 |
+| usr | 早期用户空间代码（initramfs）|
+| tools | 在Linux开发中有用的工具 |
+| virt | 虚拟化基础结构 |
+- - - - -
+## 1.5 编译内核
+内核配置
+- `make menuconfig`
+- `make config`
+- `make xconfig`
+- `make defconfig`
+
+- `make clean`
+- `make distclean`
+
+配置之后会产生.config文件  
+内核编译：
+- `make`
+- `make modules`
+- `make modules_install`
+- `make install`
+- `/sbin/depmod 2.6.31.8`
+- `make -jn`
+
+模块安装到 `/lib/modues`
+- - - - -
+## 1.6 内核开发的特点
+- 内核编程时既不能访问`C`库也不能访问标准的`C`头文件；
+- 内核编程时必须使用`GNU C`；
+- 内核编程时缺乏想用户空间那样的内存保护机制；
+- 内核编程时难以执行浮点运算；
+- 内核给每个进程只有一个很小的定长堆栈；
+- 由于内核支持异步中断、抢占和`SMP`，因此必须时刻注意同步和并发；
+- 要考虑可移植性的重要性。
+
+- 查看内核打印消息：`dmesg`或`cat /var/log/message`
+- 清空当前内核消息：`dmesg -c`
+- 插入内核模块：`insmod HelloWorld.ko`
+- 查看内核模块：`lsmod`
+- 删除内核模块：`rmmod HelloWorld.ko`
+- - - - -
+## 1.7 第一个内核模块程序
+`HelloWord.c`
+``` C
+#Include <linux/init.h>
+#Include <linux/module.h>
+MODULE_LICENSE("Dual BAD/GPL")
+static int hello_init(void) {
+    printk(KERN_INFO "Hello, world!\n");
+    printk("Hello: module loaded at 0x%p", hello_init);
+    printk("HZ = %d\n", HZ);
+}
+static void hello_exit(void) {
+    printk(KERN_INFO "Goodbye, cruel word!\n"); 
+    printk("By: module loaded at 0x%p\n", hello_exit);
+}
+module_init(hello_init);
+module_exit(hello_exit);
+MODULE_AUTHOR("harlonxl@gmail.com");
+MODULE_DESCRIPTION("Hello world, first kernel module");
+```
+- - - - -
