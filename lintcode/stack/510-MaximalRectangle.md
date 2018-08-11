@@ -1,7 +1,7 @@
 # Maximal Rectangle
-[Maximal Rectangle](https://www.lintcode.com/problem/maximal-rectangle/description)
+题目描述：[Maximal Rectangle](https://www.lintcode.com/problem/maximal-rectangle/description)
 ``` c++
-// O(n^2)
+// O(2m * n)
 public class Solution {
     /**
      * @param matrix: a boolean 2D matrix
