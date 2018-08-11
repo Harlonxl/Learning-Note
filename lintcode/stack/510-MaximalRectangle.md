@@ -1,7 +1,7 @@
 # Maximal Rectangle
 [Maximal Rectangle](https://www.lintcode.com/problem/maximal-rectangle/description)
 ``` c++
-// O(n)
+// O(n^2)
 public class Solution {
     /**
      * @param matrix: a boolean 2D matrix
