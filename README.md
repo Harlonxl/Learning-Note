@@ -14,10 +14,6 @@
 
 * [Python学习笔记](https://github.com/Harlonxl/Learning-Note/blob/master/python.md)
 
-
-## React
-* [React学习笔记]
-
 ## 联系方式：
 - 邮箱：harlonxl@gmail.com
 - 博客：http://harlon.org
