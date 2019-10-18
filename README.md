@@ -12,7 +12,7 @@
 
 ## Python
 
-* [Python学习笔记](https://github.com/Harlonxl/Learning-Note/blob/master/python/python.md)
+* [Python基础](https://github.com/Harlonxl/Learning-Note/blob/master/python/python.md)
 
 ## 联系方式：
 - 邮箱：harlonxl@gmail.com
